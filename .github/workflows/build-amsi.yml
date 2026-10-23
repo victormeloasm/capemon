@@ -1,0 +1,71 @@
+name: CAPEMON AMSI Build
+
+on:
+  push:
+    branches:
+      - build-amsi-20261023
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            binary: capemon_x64.dll
+            output: x64/Release/capemon_x64.dll
+
+          - platform: Win32
+            binary: capemon.dll
+            output: Release/capemon.dll
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Compile CAPEMON
+        shell: pwsh
+        run: |
+          msbuild .\capemon.sln /m `
+            /p:Configuration=Release `
+            /p:Platform=${{ matrix.platform }} `
+            /verbosity:minimal `
+            /fileLogger `
+            /fileLoggerParameters:LogFile=build.log
+
+      - name: Validate binary
+        shell: pwsh
+        run: |
+          $source = "${{ matrix.output }}"
+          $target = "${{ matrix.binary }}"
+
+          if (!(Test-Path $source)) {
+              throw "Expected binary not found: $source"
+          }
+
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+
+          Copy-Item $source "artifacts/$target"
+
+          Get-FileHash "artifacts/$target" -Algorithm SHA256
+
+      - name: Upload binaries and build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capemon-${{ matrix.platform }}
+          path: |
+            artifacts/*.dll
+            build.log
+          if-no-files-found: warn
